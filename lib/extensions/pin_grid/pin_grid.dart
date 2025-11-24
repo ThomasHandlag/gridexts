@@ -1,11 +1,5 @@
 import 'dart:math' as math;
-
-import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-
-part 'pin_data.dart';
-
-
 
 /// A custom grid delegate that arranges items based on pinned status.
 ///
