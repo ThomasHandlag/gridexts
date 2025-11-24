@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:gridexts/extensions/pin_grid/pin_grid.dart';
+import 'package:gridexts/extensions/pin_grid/pin_grid_view.dart';
 
 void main() => runApp(const GridViewExampleApp());
 
