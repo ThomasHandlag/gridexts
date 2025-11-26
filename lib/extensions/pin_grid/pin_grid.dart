@@ -1,43 +1,61 @@
 import 'dart:math' as math;
-import 'package:flutter/rendering.dart';
-import 'package:flutter/widgets.dart';
 
-/// A custom grid delegate that arranges items based on pinned status.
+import 'package:flutter/rendering.dart';
+
+/// A grid delegate that creates a custom layout with pinned items.
 ///
-/// Supports special layouts for 0, 1, or 2 pinned items at the beginning of the grid.
+/// This delegate supports pinning 0, 1, or 2 items at the top of the grid:
+/// - 0 pinned: Regular grid layout
+/// - 1 pinned: Full-width item with 2x height at the top
+/// - 2 pinned: Two items side-by-side (or stacked on narrow screens) at the top
+///
+/// Remaining items are arranged in a regular grid below the pinned section.
 class PinGridDelegate extends SliverGridDelegate {
-  PinGridDelegate({
+  /// Creates a pin grid delegate.
+  ///
+  /// The [dimension] must be positive and represents the base size for grid cells.
+  /// [pinnedCount] should be 0, 1, or 2.
+  const PinGridDelegate({
     required this.dimension,
     required this.pinnedCount,
     required this.totalItemCount,
-    this.crossAxisSpacing = 10,
-    this.mainAxisSpacing = 10,
-  }) : assert(dimension > 0);
+    this.crossAxisSpacing = 10.0,
+    this.mainAxisSpacing = 10.0,
+  })  : assert(dimension > 0, 'Dimension must be positive'),
+        assert(pinnedCount >= 0 && pinnedCount <= 2,
+            'Pinned count must be between 0 and 2'),
+        assert(totalItemCount >= 0, 'Total item count cannot be negative');
+
+  /// The spacing between items on the cross axis.
   final double crossAxisSpacing;
+
+  /// The spacing between items on the main axis.
   final double mainAxisSpacing;
 
-  /// The base desired height/width for a single grid cell.
+  /// The base size for a single grid cell (both width and height).
   final double dimension;
 
-  /// The number of currently pinned items (0, 1, or 2).
+  /// The number of items pinned at the top (0, 1, or 2).
   final int pinnedCount;
 
-  /// The total count of all items (pinned and unpinned).
+  /// The total number of items in the grid.
   final int totalItemCount;
 
   @override
   SliverGridLayout getLayout(SliverConstraints constraints) {
-    // Determine how many square cells can fit across the cross-axis.
-    int crossAxisCount = (constraints.crossAxisExtent / dimension).floor();
-    if (crossAxisCount < 1) {
-      crossAxisCount = 1; // Always fit at least one regardless.
-    }
-    // Adjust the actual cell dimension to perfectly fit the available cross-axis extent.
-    final double actualDimension = constraints.crossAxisExtent / crossAxisCount;
+    final crossAxisCount =
+        math.max(1, (constraints.crossAxisExtent / dimension).floor());
+    
+    // Calculate the actual dimension accounting for spacing
+    // Total width = crossAxisCount * dimension + (crossAxisCount - 1) * spacing
+    // Therefore: dimension = (totalWidth - (crossAxisCount - 1) * spacing) / crossAxisCount
+    final totalSpacing = (crossAxisCount - 1) * crossAxisSpacing;
+    final adjustedDimension = 
+        (constraints.crossAxisExtent - totalSpacing) / crossAxisCount;
 
     return PinGridLayout(
       crossAxisCount: crossAxisCount,
-      dimension: actualDimension,
+      dimension: adjustedDimension,
       pinnedCount: pinnedCount,
       totalItemCount: totalItemCount,
       crossAxisSpacing: crossAxisSpacing,
@@ -46,126 +64,152 @@ class PinGridDelegate extends SliverGridDelegate {
   }
 
   @override
-  bool shouldRelayout(PinGridDelegate oldDelegate) {
-    // Relayout if any of the key properties change.
+  bool shouldRelayout(covariant PinGridDelegate oldDelegate) {
     return dimension != oldDelegate.dimension ||
         pinnedCount != oldDelegate.pinnedCount ||
-        totalItemCount != oldDelegate.totalItemCount;
+        totalItemCount != oldDelegate.totalItemCount ||
+        crossAxisSpacing != oldDelegate.crossAxisSpacing ||
+        mainAxisSpacing != oldDelegate.mainAxisSpacing;
   }
 }
 
-/// Defines the geometry for each child in the custom grid layout.
+/// Layout implementation for the pin grid.
+///
+/// Handles the positioning and sizing of pinned and unpinned items.
 class PinGridLayout extends SliverGridLayout {
+  /// Creates a pin grid layout.
   const PinGridLayout({
     required this.crossAxisCount,
     required this.dimension,
     required this.pinnedCount,
     required this.totalItemCount,
-    this.crossAxisSpacing = 0,
-    this.mainAxisSpacing = 0,
-  }) : assert(crossAxisCount > 0),
-       assert(dimension > 0),
-       assert(pinnedCount >= 0),
-       assert(totalItemCount >= 0);
+    this.crossAxisSpacing = 0.0,
+    this.mainAxisSpacing = 0.0,
+  })  : assert(crossAxisCount > 0, 'Cross axis count must be positive'),
+        assert(dimension > 0, 'Dimension must be positive'),
+        assert(pinnedCount >= 0, 'Pinned count cannot be negative'),
+        assert(totalItemCount >= 0, 'Total item count cannot be negative');
 
+  /// The number of cells that fit across the cross axis.
   final int crossAxisCount;
+
+  /// The size of a single grid cell.
   final double dimension;
+
+  /// The number of pinned items.
   final int pinnedCount;
+
+  /// The total number of items.
   final int totalItemCount;
+
+  /// The spacing between items on the cross axis.
   final double crossAxisSpacing;
+
+  /// The spacing between items on the main axis.
   final double mainAxisSpacing;
 
-  /// Calculates the total height occupied by the pinned section of the grid.
-  double _getPinnedSectionHeight() {
-    if (pinnedCount == 0) return 0;
-    if (pinnedCount == 1) {
-      return 2 * dimension +
-          mainAxisSpacing; // One large pinned item (double height) + spacing after
+  /// Calculates the height of the pinned items section.
+  double get _pinnedSectionHeight {
+    switch (pinnedCount) {
+      case 0:
+        return 0.0;
+      case 1:
+        // One large item: 2x height + spacing
+        return 2 * dimension + mainAxisSpacing;
+      case 2:
+        // Two items side-by-side (if space) or stacked
+        if (crossAxisCount >= 2) {
+          return dimension + mainAxisSpacing;
+        } else {
+          return 2 * dimension + 2 * mainAxisSpacing;
+        }
+      default:
+        return 0.0;
     }
-    // For 2 pinned items:
-    // If crossAxisCount >= 2, they share the first row (one row height).
-    // If crossAxisCount == 1, they occupy two distinct rows (two row heights).
-    if (pinnedCount == 2) {
-      return (crossAxisCount >= 2)
-          ? (dimension + mainAxisSpacing)
-          : (2 * dimension + 2 * mainAxisSpacing);
-    }
-    return 0; // Should not be reached with maxPinnedItems = 2.
   }
 
-  @override
-  SliverGridGeometry getGeometryForChildIndex(int index) {
-    if (index < pinnedCount) {
-      // This is a pinned item (logical index refers to its position in the sorted list)
-      if (pinnedCount == 1 && index == 0) {
-        // Case 1: Only one item is pinned. It's large and takes the full width and double height.
-        return SliverGridGeometry(
-          scrollOffset: 0,
-          crossAxisOffset: 0,
-          mainAxisExtent: 2 * dimension,
-          crossAxisExtent:
-              crossAxisCount * dimension +
-              (crossAxisCount - 1) * crossAxisSpacing,
-        );
-      } else if (pinnedCount == 2) {
-        // Case 2: Two items are pinned. They take normal sizes in the first row(s).
+  /// Gets the geometry for a pinned item at the given index.
+  SliverGridGeometry? _getPinnedItemGeometry(int index) {
+    if (index >= pinnedCount) return null;
+
+    if (pinnedCount == 1 && index == 0) {
+      // Single pinned item: full width, double height
+      final totalWidth = crossAxisCount * dimension +
+          (crossAxisCount - 1) * crossAxisSpacing;
+      
+      return SliverGridGeometry(
+        scrollOffset: 0.0,
+        crossAxisOffset: 0.0,
+        mainAxisExtent: 2 * dimension,
+        crossAxisExtent: totalWidth,
+      );
+    }
+
+    if (pinnedCount == 2) {
+      final hasSpaceForTwoColumns = crossAxisCount >= 2;
+
+      if (hasSpaceForTwoColumns) {
+        // Distribute cells between two items
+        final firstCellCount = crossAxisCount ~/ 2;
+        final secondCellCount = crossAxisCount - firstCellCount;
+        
+        // Calculate the actual width each item should occupy
+        // Total width = crossAxisCount * dimension + (crossAxisCount - 1) * spacing
+        // We need: firstWidth + spacing + secondWidth = totalWidth
+        final firstItemWidth = firstCellCount * dimension + 
+            (firstCellCount - 1) * crossAxisSpacing;
+        final secondItemWidth = secondCellCount * dimension + 
+            (secondCellCount - 1) * crossAxisSpacing;
+
         if (index == 0) {
           // First pinned item
-          final int firstItemCells = (crossAxisCount >= 2)
-              ? (crossAxisCount / 2).floor()
-              : 1;
-          final double firstItemSpacing = (crossAxisCount >= 2)
-              ? (firstItemCells - 1) * crossAxisSpacing
-              : 0;
           return SliverGridGeometry(
-            scrollOffset: 0,
-            crossAxisOffset: 0,
+            scrollOffset: 0.0,
+            crossAxisOffset: 0.0,
             mainAxisExtent: dimension,
-            crossAxisExtent: (crossAxisCount >= 2)
-                ? firstItemCells * dimension +
-                      firstItemSpacing // Half width if enough space
-                : dimension, // Full width if only one column
+            crossAxisExtent: firstItemWidth,
           );
-        } else if (index == 1) {
-          // Second pinned item
-          final int firstItemCells = (crossAxisCount >= 2)
-              ? (crossAxisCount / 2).floor()
-              : 1;
-          final int secondItemCells = (crossAxisCount >= 2)
-              ? (crossAxisCount - firstItemCells)
-              : 1;
-          final double secondItemSpacing = (crossAxisCount >= 2)
-              ? (secondItemCells - 1) * crossAxisSpacing
-              : 0;
+        } else {
+          // Second pinned item - offset by first item width + one spacing
           return SliverGridGeometry(
-            scrollOffset: (crossAxisCount >= 2)
-                ? 0
-                : (dimension +
-                      mainAxisSpacing), // Same row if space, else next row
-            crossAxisOffset: (crossAxisCount >= 2)
-                ? (firstItemCells * dimension +
-                      firstItemCells *
-                          crossAxisSpacing) // Starts after first item + spacing
-                : 0, // Starts at column 0 if on next row
+            scrollOffset: 0.0,
+            crossAxisOffset: firstItemWidth + crossAxisSpacing,
             mainAxisExtent: dimension,
-            crossAxisExtent: (crossAxisCount >= 2)
-                ? (secondItemCells * dimension +
-                      secondItemSpacing) // Fills remaining width
-                : dimension, // Full width if only one column
+            crossAxisExtent: secondItemWidth,
+          );
+        }
+      } else {
+        // Single column layout - stack items vertically
+        if (index == 0) {
+          return SliverGridGeometry(
+            scrollOffset: 0.0,
+            crossAxisOffset: 0.0,
+            mainAxisExtent: dimension,
+            crossAxisExtent: dimension,
+          );
+        } else {
+          return SliverGridGeometry(
+            scrollOffset: dimension + mainAxisSpacing,
+            crossAxisOffset: 0.0,
+            mainAxisExtent: dimension,
+            crossAxisExtent: dimension,
           );
         }
       }
     }
 
-    // Unpinned items: arranged in a regular grid after the pinned section.
-    final double pinnedAreaHeight = _getPinnedSectionHeight();
-    final int relativeIndex =
-        index - pinnedCount; // Index relative to the start of unpinned items
-    final int row = relativeIndex ~/ crossAxisCount;
-    final int col = relativeIndex % crossAxisCount;
+    return null;
+  }
+
+  /// Gets the geometry for an unpinned item at the given index.
+  SliverGridGeometry _getUnpinnedItemGeometry(int index) {
+    final relativeIndex = index - pinnedCount;
+    final row = relativeIndex ~/ crossAxisCount;
+    final col = relativeIndex % crossAxisCount;
 
     return SliverGridGeometry(
-      scrollOffset: pinnedAreaHeight + row * (dimension + mainAxisSpacing),
+      scrollOffset:
+          _pinnedSectionHeight + row * (dimension + mainAxisSpacing),
       crossAxisOffset: col * (dimension + crossAxisSpacing),
       mainAxisExtent: dimension,
       crossAxisExtent: dimension,
@@ -173,106 +217,76 @@ class PinGridLayout extends SliverGridLayout {
   }
 
   @override
+  SliverGridGeometry getGeometryForChildIndex(int index) {
+    assert(index >= 0 && index < totalItemCount, 'Index out of bounds');
+
+    return _getPinnedItemGeometry(index) ?? _getUnpinnedItemGeometry(index);
+  }
+
+  @override
   double computeMaxScrollOffset(int childCount) {
-    if (childCount == 0 || dimension == 0) {
-      return 0;
-    }
+    if (childCount == 0) return 0.0;
 
-    final double pinnedHeight = _getPinnedSectionHeight();
-    final int unpinnedCount = math.max(0, childCount - pinnedCount);
+    final unpinnedCount = math.max(0, childCount - pinnedCount);
+    if (unpinnedCount == 0) return _pinnedSectionHeight;
 
-    if (unpinnedCount == 0) {
-      return pinnedHeight; // Only pinned items, no scrolling beyond them.
-    }
+    final unpinnedRows = (unpinnedCount + crossAxisCount - 1) ~/ crossAxisCount;
+    final unpinnedHeight = unpinnedRows * dimension +
+        math.max(0, unpinnedRows - 1) * mainAxisSpacing;
 
-    // Calculate rows needed for unpinned items.
-    final int unpinnedRows =
-        (unpinnedCount + crossAxisCount - 1) ~/ crossAxisCount;
-    final double unpinnedHeight =
-        unpinnedRows * dimension +
-        (unpinnedRows > 0 ? (unpinnedRows - 1) * mainAxisSpacing : 0);
-
-    return pinnedHeight + unpinnedHeight;
+    return _pinnedSectionHeight + unpinnedHeight;
   }
 
   @override
   int getMinChildIndexForScrollOffset(double scrollOffset) {
-    if (totalItemCount == 0) return 0; // No children.
+    if (totalItemCount == 0) return 0;
 
-    final double pinnedAreaHeight = _getPinnedSectionHeight();
+    // Within pinned section
+    if (scrollOffset < _pinnedSectionHeight) {
+      if (pinnedCount <= 1) return 0;
 
-    if (scrollOffset < pinnedAreaHeight) {
-      // Scroll position is within the pinned section.
-      if (pinnedCount == 0) return 0; // No pinned items, first item is 0.
-      if (pinnedCount == 1) return 0; // Single pinned large item
-      if (pinnedCount == 2) {
-        // If 2 items pinned: if crossAxisCount == 1, they are stacked.
-        // If scrollOffset is past the first item's height, the second is the min visible.
-        if (crossAxisCount == 1 &&
-            scrollOffset >= (dimension + mainAxisSpacing)) {
-          return 1;
-        }
-        return 0; // Otherwise, the first pinned item is the min visible.
+      // Two pinned items, single column, check if scrolled past first
+      if (crossAxisCount == 1 &&
+          scrollOffset >= dimension + mainAxisSpacing) {
+        return 1;
       }
-      return 0; // Default for other cases (though we cap pinned items at 2).
+      return 0;
     }
 
-    // Scroll position is in the unpinned section.
-    final double relativeScrollOffset = scrollOffset - pinnedAreaHeight;
-    // Calculate which row in the unpinned section the scrollOffset corresponds to.
-    final int relativeRow =
-        (relativeScrollOffset / (dimension + mainAxisSpacing)).floor();
-    final int minIndex = pinnedCount + relativeRow * crossAxisCount;
+    // Within unpinned section
+    final relativeOffset = scrollOffset - _pinnedSectionHeight;
+    final row = (relativeOffset / (dimension + mainAxisSpacing)).floor();
+    final minIndex = pinnedCount + row * crossAxisCount;
 
-    // Ensure the returned index is within the valid range of total items.
     return math.min(minIndex, totalItemCount - 1);
   }
 
   @override
   int getMaxChildIndexForScrollOffset(double scrollOffset) {
-    if (totalItemCount == 0) return -1; // No children.
+    if (totalItemCount == 0) return -1;
 
-    final double pinnedAreaHeight = _getPinnedSectionHeight();
-    final int lastIndex = totalItemCount - 1;
+    final lastIndex = totalItemCount - 1;
+    final viewportBottom = scrollOffset + dimension;
 
-    // Approximate the bottom of the visible viewport.
-    // Using `dimension` as a minimum height to consider for visibility.
-    final double viewportBottom = scrollOffset + dimension;
+    // Within pinned section
+    if (viewportBottom <= _pinnedSectionHeight) {
+      if (pinnedCount == 0) return -1;
+      if (pinnedCount == 1) return math.min(0, lastIndex);
 
-    // If the viewport bottom is still within or near the pinned area.
-    if (viewportBottom <= pinnedAreaHeight) {
-      if (pinnedCount == 0) return -1; // No pinned items.
-      if (pinnedCount == 1) {
+      // Two pinned items
+      if (crossAxisCount == 1 &&
+          viewportBottom <= dimension + mainAxisSpacing) {
         return math.min(0, lastIndex);
-      } // Only one pinned item.
-      if (pinnedCount == 2) {
-        // If two pinned items:
-        // If crossAxisCount == 1 and viewport bottom is before the second pinned item.
-        if (crossAxisCount == 1 &&
-            viewportBottom <= (dimension + mainAxisSpacing)) {
-          return math.min(0, lastIndex);
-        }
-        return math.min(
-          1,
-          lastIndex,
-        ); // Otherwise, the second pinned item might be visible.
       }
-      return math.min(
-        pinnedCount - 1,
-        lastIndex,
-      ); // Fallback for more general pinned counts.
+      return math.min(1, lastIndex);
     }
 
-    // If the viewport bottom extends into the unpinned section.
-    final double relativeScrollOffset = viewportBottom - pinnedAreaHeight;
-    // Determine the highest row (in the unpinned section) that intersects the viewport.
-    final int relativeRow =
-        (relativeScrollOffset / (dimension + mainAxisSpacing)).ceil() - 1;
-    // Calculate the maximum logical index within that row.
-    final int maxIndexInRow =
-        pinnedCount + (relativeRow + 1) * crossAxisCount - 1;
+    // Within unpinned section
+    final relativeOffset = viewportBottom - _pinnedSectionHeight;
+    final row =
+        math.max(0, (relativeOffset / (dimension + mainAxisSpacing)).ceil() - 1);
+    final maxIndex = pinnedCount + (row + 1) * crossAxisCount - 1;
 
-    // Ensure the returned index is within the valid range of total items.
-    return math.min(maxIndexInRow, lastIndex);
+    return math.min(maxIndex, lastIndex);
   }
 }
