@@ -63,8 +63,20 @@ class _PinGridViewState extends State<PinGridView> {
   /// Set of original indices that are currently pinned
   final Set<int> _pinnedIndices = {};
 
+  @override
+  void didUpdateWidget(PinGridView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Clean up invalid pinned indices when item count changes
+    if (oldWidget.itemCount != widget.itemCount) {
+      _pinnedIndices.removeWhere((index) => index >= widget.itemCount);
+    }
+  }
+
   /// Toggles the pinned state of an item at the given original index
   void _togglePinned(int originalIndex) {
+    if (originalIndex < 0 || originalIndex >= widget.itemCount) {
+      return; // Invalid index, do nothing
+    }
     setState(() {
       if (_pinnedIndices.contains(originalIndex)) {
         _pinnedIndices.remove(originalIndex);
@@ -82,6 +94,9 @@ class _PinGridViewState extends State<PinGridView> {
 
   /// Returns a list of original indices sorted with pinned items first
   List<int> get _orderedIndices {
+    // Filter out any invalid indices before building the list
+    _pinnedIndices.removeWhere((index) => index >= widget.itemCount);
+    
     final List<int> unpinned = [];
     for (int i = 0; i < widget.itemCount; i++) {
       if (!_pinnedIndices.contains(i)) {
