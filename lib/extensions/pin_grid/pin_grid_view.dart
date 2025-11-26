@@ -103,11 +103,14 @@ class _PinGridViewState extends State<PinGridView> {
         final int originalIndex = orderedIndices[logicalIndex];
         final bool isPinned = _isPinned(originalIndex);
 
-        return widget.itemBuilder(
-          context,
-          originalIndex,
-          isPinned,
-          () => _togglePinned(originalIndex),
+        return KeyedSubtree(
+          key: ValueKey<int>(originalIndex),
+          child: widget.itemBuilder(
+            context,
+            originalIndex,
+            isPinned,
+            () => _togglePinned(originalIndex),
+          ),
         );
       },
       gridDelegate: PinGridDelegate(
