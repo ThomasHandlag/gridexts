@@ -4,23 +4,25 @@ import 'pin_grid.dart';
 /// A widget that displays a grid with pinnable items.
 ///
 /// Items can be pinned to the top of the grid with special layouts for 1-2 pinned items.
-class PinGridView extends StatefulWidget {
-  /// Total number of items to display in the grid
-  final int itemCount;
+/// Uses generic type [K] for item keys to uniquely identify each item.
+class PinGridView<K> extends StatefulWidget {
+  /// List of unique keys for each item
+  final List<K> items;
 
   /// Builder function for each grid item
   /// Parameters:
   /// - context: BuildContext
-  /// - originalIndex: The original index of the item in the data
+  /// - itemKey: The unique key for this item
+  /// - index: The current index in the ordered list
   /// - isPinned: Whether this item is currently pinned
   /// - onTogglePin: Callback to toggle the pin state
   final Widget Function(
     BuildContext context,
-    int originalIndex,
+    K itemKey,
+    int index,
     bool isPinned,
     VoidCallback onTogglePin,
-  )
-  itemBuilder;
+  ) itemBuilder;
 
   /// Base dimension for grid cells (width/height)
   final double dimension;
@@ -42,7 +44,7 @@ class PinGridView extends StatefulWidget {
 
   const PinGridView({
     super.key,
-    required this.itemCount,
+    required this.items,
     required this.itemBuilder,
     this.dimension = 100.0,
     this.crossAxisSpacing = 10.0,
@@ -56,82 +58,92 @@ class PinGridView extends StatefulWidget {
        );
 
   @override
-  State<PinGridView> createState() => _PinGridViewState();
+  State<PinGridView<K>> createState() => _PinGridViewState<K>();
 }
 
-class _PinGridViewState extends State<PinGridView> {
-  /// Set of original indices that are currently pinned
-  final Set<int> _pinnedIndices = {};
+class _PinGridViewState<K> extends State<PinGridView<K>> {
+  /// Set of item keys that are currently pinned
+  final Set<K> _pinnedKeys = {};
 
   @override
-  void didUpdateWidget(PinGridView oldWidget) {
+  void didUpdateWidget(PinGridView<K> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Clean up invalid pinned indices when item count changes
-    if (oldWidget.itemCount != widget.itemCount) {
-      _pinnedIndices.removeWhere((index) => index >= widget.itemCount);
+    // Clean up pinned keys that are no longer in the items list
+    if (oldWidget.items != widget.items) {
+      final itemSet = widget.items.toSet();
+      _pinnedKeys.removeWhere((key) => !itemSet.contains(key));
     }
   }
 
-  /// Toggles the pinned state of an item at the given original index
-  void _togglePinned(int originalIndex) {
-    if (originalIndex < 0 || originalIndex >= widget.itemCount) {
-      return; // Invalid index, do nothing
+  /// Toggles the pinned state of an item with the given key
+  void _togglePinned(K itemKey) {
+    if (!widget.items.contains(itemKey)) {
+      return; // Item not in list, do nothing
     }
     setState(() {
-      if (_pinnedIndices.contains(originalIndex)) {
-        _pinnedIndices.remove(originalIndex);
+      if (_pinnedKeys.contains(itemKey)) {
+        _pinnedKeys.remove(itemKey);
       } else {
         // Only add if we haven't reached the maximum
-        if (_pinnedIndices.length < widget.maxPinnedItems) {
-          _pinnedIndices.add(originalIndex);
+        if (_pinnedKeys.length < widget.maxPinnedItems) {
+          _pinnedKeys.add(itemKey);
         }
       }
     });
   }
 
   /// Checks if an item is currently pinned
-  bool _isPinned(int originalIndex) => _pinnedIndices.contains(originalIndex);
+  bool _isPinned(K itemKey) => _pinnedKeys.contains(itemKey);
 
-  /// Returns a list of original indices sorted with pinned items first
-  List<int> get _orderedIndices {
-    // Filter out any invalid indices before building the list
-    _pinnedIndices.removeWhere((index) => index >= widget.itemCount);
+  /// Returns a list of item keys sorted with pinned items first
+  List<K> get _orderedItems {
+    // Clean up invalid pinned keys
+    final itemSet = widget.items.toSet();
+    _pinnedKeys.removeWhere((key) => !itemSet.contains(key));
     
-    final List<int> unpinned = [];
-    for (int i = 0; i < widget.itemCount; i++) {
-      if (!_pinnedIndices.contains(i)) {
-        unpinned.add(i);
+    final List<K> unpinned = [];
+    for (final item in widget.items) {
+      if (!_pinnedKeys.contains(item)) {
+        unpinned.add(item);
       }
     }
-    final List<int> sortedPinned = _pinnedIndices.toList()..sort();
+    
+    // Keep pinned items in the order they appear in the original list
+    final List<K> sortedPinned = [];
+    for (final item in widget.items) {
+      if (_pinnedKeys.contains(item)) {
+        sortedPinned.add(item);
+      }
+    }
+    
     return [...sortedPinned, ...unpinned];
   }
 
   @override
   Widget build(BuildContext context) {
-    final orderedIndices = _orderedIndices;
+    final orderedItems = _orderedItems;
 
     return GridView.builder(
-      itemCount: widget.itemCount,
-      itemBuilder: (context, logicalIndex) {
-        // Map logical index (position in grid) to original index (data)
-        final int originalIndex = orderedIndices[logicalIndex];
-        final bool isPinned = _isPinned(originalIndex);
+      itemCount: orderedItems.length,
+      itemBuilder: (context, index) {
+        final K itemKey = orderedItems[index];
+        final bool isPinned = _isPinned(itemKey);
 
         return KeyedSubtree(
-          key: ValueKey<int>(originalIndex),
+          key: ValueKey<K>(itemKey),
           child: widget.itemBuilder(
             context,
-            originalIndex,
+            itemKey,
+            index,
             isPinned,
-            () => _togglePinned(originalIndex),
+            () => _togglePinned(itemKey),
           ),
         );
       },
       gridDelegate: PinGridDelegate(
         dimension: widget.dimension,
-        pinnedCount: _pinnedIndices.length,
-        totalItemCount: widget.itemCount,
+        pinnedCount: _pinnedKeys.length,
+        totalItemCount: orderedItems.length,
         crossAxisSpacing: widget.crossAxisSpacing,
         mainAxisSpacing: widget.mainAxisSpacing,
       ),
